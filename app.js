@@ -100,7 +100,7 @@ const KINDS = [
   { k: 'move', e: '🚆', n: '교통' }, { k: 'etc', e: '📝', n: '기타' }, { k: 'expense', e: '💳', n: '비용만' },
 ];
 const KIND = Object.fromEntries(KINDS.map((x) => [x.k, x]));
-const DAY_COLORS = ['#0fb5a6', '#f2711c', '#6c5ce7', '#e84393', '#2d9cdb', '#27ae60', '#b7791f'];
+const DAY_COLORS = ['#4f7f72', '#c58a5c', '#7d7bb5', '#b5738c', '#5f8fb3', '#8c9a5e', '#a38c5f'];
 const MODES = { walk: { e: '🚶', n: '도보' }, taxi: { e: '🚕', n: '택시' }, transit: { e: '🚌', n: '대중교통' } };
 const SEEDS = [
   { id: 'dalian-k7m2x9', trip: { title: '대련 여행', emoji: '🌊', start: '2026-12-11', end: '2026-12-13', city: '대련', cityZh: '大连', lat: 38.914, lng: 121.6147, members: [], rate: 200 },
@@ -369,7 +369,7 @@ function renderList() {
   list.replaceChildren(); let total = 0;
   show.forEach((day) => {
     const b = buildDay(day); total += b.items.length;
-    const di = days.indexOf(day), color = day === 'none' ? '#8a93a0' : DAY_COLORS[di % DAY_COLORS.length];
+    const di = days.indexOf(day), color = day === 'none' ? '#9a9da2' : DAY_COLORS[di % DAY_COLORS.length];
     const sum = b.items.reduce((s, x) => s + (x.cost > 0 ? toKRW(x) : 0), 0);
     const info = [b.dist ? '이동 ' + fmtDist(b.dist) + ' · ' + fmtMin(b.min) : '', sum ? won(sum) : ''].filter(Boolean).join(' · ');
     list.append(h('div', { class: 'day-h' }, h('b', null, day === 'none' ? '보관함' : 'Day ' + (di + 1)), h('span', null, day === 'none' ? '날짜 미정 · 가고 싶은 곳' : mdw(day)), h('i', null, info)));
@@ -446,7 +446,7 @@ function drawMap() {
   initMap(); map.invalidateSize(); layerG.clearLayers();
   const days = tripDays(S.trip), show = S.day === 'all' ? days : [S.day], pts = [];
   show.forEach((day) => {
-    const b = buildDay(day), di = days.indexOf(day), color = day === 'none' ? '#8a93a0' : DAY_COLORS[di % DAY_COLORS.length], line = [];
+    const b = buildDay(day), di = days.indexOf(day), color = day === 'none' ? '#9a9da2' : DAY_COLORS[di % DAY_COLORS.length], line = [];
     b.seq.forEach((s) => {
       if (!hasLoc(s.it)) return;
       const ll = toMap(s.it.lat, s.it.lng); line.push(ll); pts.push(ll);
@@ -817,6 +817,16 @@ function nameSheet(after) {
     const old = S.me; S.me = v; ls.set('me', v);
     if (S.trip && old && old !== v && (S.trip.members || []).includes(old) && !S.trip.members.includes(v)) {
       S.trip.members = S.trip.members.map((m) => (m === old ? v : m)); cachePut(); queue({ k: 'trip', id: S.tripId, data: S.trip });
+      // 이름을 바꾸면 결제·정산·작성자 기록도 같이 바꿔준다 (안 그러면 정산에 옛 이름이 유령처럼 남는다)
+      S.items.slice().forEach((it) => {
+        const usedIn = it.payer === old || it.by === old || (it.split || []).includes(old);
+        if (!usedIn) return;
+        const n = Object.assign({}, it);
+        if (n.payer === old) n.payer = v;
+        if (n.by === old) n.by = v;
+        if (n.split) n.split = n.split.map((m) => (m === old ? v : m));
+        saveItem(n, true);
+      });
     }
     ensureMember(); closeSheet(); renderAll(); if (after) after();
   };

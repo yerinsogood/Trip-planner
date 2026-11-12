@@ -1,6 +1,6 @@
 /* 오프라인에서도 앱이 열리게: 온라인이면 최신 파일, 안 되면(3초) 저장해둔 파일 */
-const CACHE = 'trip-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.json', 'icon.svg', 'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/supabase.js'];
+const CACHE = 'trip-v3';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.json', 'icon.svg', 'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/supabase.js', 'vendor/fonts/Pretendard-Regular.subset.woff2', 'vendor/fonts/Pretendard-SemiBold.subset.woff2', 'vendor/fonts/Pretendard-Bold.subset.woff2'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
