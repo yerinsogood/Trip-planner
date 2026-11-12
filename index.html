@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="같이가자">
+<title>같이가자 · 여행 플래너</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 홈 -->
+<section id="home" hidden>
+  <header class="home-head">
+    <h1>내 여행</h1>
+    <button class="btn-text" id="btnMe"></button>
+  </header>
+  <div id="homeList"></div>
+  <button class="btn-primary wide" id="btnNewTrip">+ 새 여행 만들기</button>
+  <p class="hint center" id="homeHint"></p>
+</section>
+
+<!-- 여행 -->
+<section id="trip" hidden>
+  <header class="top">
+    <button class="icon-btn" id="btnBack" aria-label="뒤로">‹</button>
+    <div class="top-title">
+      <strong id="tTitle"></strong>
+      <span id="tSub"></span>
+    </div>
+    <button class="icon-btn" id="btnSearch" aria-label="일정 검색">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    </button>
+    <button class="icon-btn" id="btnShare" aria-label="공유">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></svg>
+    </button>
+    <button class="icon-btn" id="btnSettings" aria-label="여행 설정">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+    </button>
+  </header>
+  <div id="status" class="status" hidden></div>
+
+  <div id="planView">
+    <div id="mapWrap">
+      <div id="map"></div>
+      <button class="map-chip" id="btnLayer"></button>
+      <button class="map-chip right" id="btnMapSize">지도 접기</button>
+    </div>
+    <nav id="dayBar" class="daybar"></nav>
+    <div id="dayTools" class="daytools"></div>
+    <main id="list"></main>
+  </div>
+
+  <main id="costView" hidden></main>
+
+  <button class="fab" id="fab">+ 일정 추가</button>
+  <nav class="tabbar">
+    <button data-tab="plan" class="on">일정</button>
+    <button data-tab="cost">비용</button>
+  </nav>
+</section>
+
+<!-- 바텀시트 / 오버레이 -->
+<div id="sheetBg" class="sheet-bg" hidden></div>
+<div id="sheet" class="sheet" hidden></div>
+
+<div id="picker" class="full" hidden>
+  <header class="top">
+    <button class="icon-btn" id="pickCancel">‹</button>
+    <div class="top-title"><strong>지도에서 위치 지정</strong><span>지도를 움직여 핀을 맞춰줘</span></div>
+  </header>
+  <div class="picker-map"><div id="pickMap"></div><div class="pin">📍</div></div>
+  <button class="btn-primary wide" id="pickOk">이 위치로 정하기</button>
+</div>
+
+<div id="search" class="full" hidden>
+  <header class="top">
+    <button class="icon-btn" id="searchClose">‹</button>
+    <input id="searchInput" type="search" placeholder="일정·메모·장소 이름 검색" autocomplete="off">
+  </header>
+  <div id="searchResults" class="search-results"></div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
