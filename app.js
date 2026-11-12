@@ -531,34 +531,108 @@ function toast(msg, act, fn) {
 const field = (label, ...kids) => h('div', { class: 'f' }, label ? h('label', null, label) : null, kids);
 
 /* ───────── 장소 검색 ───────── */
+/* 한국어 이름 → 중국어 이름 사전. [중국어, 한국어 표시명, 다른 한국어 표기…] */
+const KO_PLACES = {
+  '大连': [
+    ['星海广场', '성해광장', '싱하이광장'], ['星海公园', '성해공원', '싱하이공원'], ['星海湾大桥', '성해만대교', '싱하이만대교'],
+    ['俄罗斯风情街', '러시아거리', '러시아풍정거리', '러시아풍경거리'], ['中山广场', '중산광장', '중산광장'], ['人民广场', '인민광장'],
+    ['东港音乐喷泉广场', '동항 음악분수', '둥강음악분수', '동항분수', '동항'], ['大连东方水城', '동방수성', '베니스수성', '베네치아수성', '동방베니스'],
+    ['老虎滩海洋公园', '노호탄 해양공원', '라오후탄', '노호탄'], ['棒棰岛', '방추도', '방추이다오', '빵추이다오'], ['滨海路', '빈해로', '빈하이루'],
+    ['大连渔人码头', '어인마두', '피셔맨스워프', '위런마터우', '어부부두'], ['圣亚海洋世界', '성아해양세계', '셩야해양세계', '성야해양세계'],
+    ['金石滩', '금석탄', '진스탄'], ['大连发现王国', '발현왕국', '디스커버리랜드', '디스커버리킹덤'], ['旅顺日俄监狱旧址', '여순감옥', '뤼순감옥'],
+    ['旅顺口区', '여순', '뤼순'], ['旅顺火车站', '여순역', '뤼순역'], ['二〇三高地', '203고지', '이령삼고지'], ['白玉山', '백옥산', '바이위산'],
+    ['青泥洼桥', '청니와교', '칭니와차오'], ['天津街', '천진가', '톈진제', '천진거리'], ['西安路', '서안로', '시안루'], ['东关街', '동관가', '둥관제'],
+    ['大连站', '대련역', '다롄역'], ['大连北站', '대련북역', '다롄북역'], ['大连周水子国际机场', '대련공항', '다롄공항', '저우수이쯔공항', '주수자공항'],
+    ['劳动公园', '노동공원', '라오둥공원'], ['大连森林动物园', '삼림동물원', '대련동물원'], ['莲花山观景台', '연화산 전망대', '연화산', '롄화산'],
+    ['大连博物馆', '대련박물관'], ['大连自然博物馆', '자연박물관'], ['付家庄公园', '부가장', '푸자좡'], ['和平广场', '화평광장', '허핑광장'],
+    ['大连柏威年', '파빌리온', '백위년'], ['大连恒隆广场', '항륭광장', '헝룽광장', '올림피아66'], ['罗斯福购物中心', '루스벨트쇼핑센터', '나사복', '뤄쓰푸'],
+    ['友好广场', '우호광장', '유하오광장'], ['港湾广场', '항만광장'], ['大连电视塔', '대련TV타워', '전시탑', '티비타워'], ['燕窝岭', '연와령', '옌워링'],
+    ['北大桥', '북대교', '베이다차오'], ['大连理工大学', '대련이공대학', '대련이공대'], ['黑石礁', '흑석초', '헤이스자오'], ['高新园区', '고신원구', '하이테크존'],
+  ],
+  '烟台': [
+    ['烟台山公园', '연태산', '옌타이산', '연태산공원'], ['朝阳街', '조양가', '차오양제', '조양거리'], ['所城里', '소성리', '쒀청리'],
+    ['养马岛', '양마도', '양마다오'], ['蓬莱阁', '봉래각', '펑라이거', '펑라이각'], ['八仙过海景区', '팔선과해', '바셴궈하이'], ['三仙山', '삼선산', '싼셴산'],
+    ['张裕酒文化博物馆', '장유와인박물관', '장위와인박물관', '장유박물관', '장위박물관'], ['烟台大学', '연태대학', '옌타이대학'],
+    ['烟台第一海水浴场', '제1해수욕장', '제일해수욕장'], ['烟台金沙滩', '금사탄', '진사탄'], ['烟台渔人码头', '어인마두', '피셔맨스워프', '위런마터우'],
+    ['月亮湾', '월량만', '웨량완'], ['东炮台', '동포대', '둥파오타이'], ['烟台蓬莱国际机场', '연태공항', '옌타이공항', '펑라이공항', '봉래공항'],
+    ['烟台站', '연태역', '옌타이역'], ['烟台南站', '연태남역', '옌타이남역'], ['烟台大悦城', '조이시티', '대열성', '다웨청'], ['万达广场', '완다광장', '만달광장'],
+    ['滨海广场', '빈해광장', '빈하이광장'], ['昆嵛山', '곤유산', '쿤위산'], ['长岛', '장도', '창다오'], ['南山公园', '남산공원'], ['毓璜顶公园', '육황정', '위황딩'],
+    ['海昌鲸鲨海洋公园', '해창해양공원', '해창'], ['烟台博物馆', '연태박물관'], ['芝罘岛', '지부도', '즈푸다오'], ['黄海明珠', '황해명주'],
+    ['威海', '위해', '웨이하이'], ['刘公岛', '유공도', '류궁다오'], ['蓬莱', '봉래', '펑라이'], ['莱山区', '래산구', '라이산'], ['芝罘区', '지부구', '즈푸구'],
+  ],
+};
+const hasHangul = (s) => /[가-힣]/.test(s);
+function koAliases(q, t) {
+  const nq = q.replace(/\s+/g, ''); if (nq.length < 2) return [];
+  const cities = Object.keys(KO_PLACES).sort((a, b) => (b === (t.cityZh || '')) - (a === (t.cityZh || '')));
+  const exact = [], part = [];
+  cities.forEach((c) => KO_PLACES[c].forEach((e) => {
+    const al = e.slice(1).map((x) => x.replace(/\s+/g, ''));
+    if (al.includes(nq)) exact.push({ zh: e[0], ko: e[1], city: c });
+    else if (al.some((a) => a.includes(nq) || nq.includes(a))) part.push({ zh: e[0], ko: e[1], city: c });
+  }));
+  return exact.concat(part).slice(0, 3);
+}
+async function nomi(query, t, bias) {
+  let u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&accept-language=ko,zh-CN,en&q=${encodeURIComponent(query)}`;
+  if (bias && typeof t.lat === 'number') u += `&viewbox=${t.lng - 0.9},${t.lat + 0.7},${t.lng + 0.9},${t.lat - 0.7}`;
+  const res = await fetch(u); if (!res.ok) throw new Error('search ' + res.status);
+  return res.json();
+}
+/* 한국어 위키백과에서 좌표가 있는 문서를 찾는다 (한국어 이름 검색 보조) */
+async function wikiKo(q, t) {
+  const u = `https://ko.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=8&gsrsearch=${encodeURIComponent(q)}&prop=coordinates%7Clanglinks%7Cdescription&lllang=zh&lllimit=max&colimit=max`;
+  const j = await (await fetch(u)).json();
+  const pages = Object.values((j.query && j.query.pages) || {}).filter((p) => p.coordinates && p.coordinates[0]).sort((a, b) => (a.index || 0) - (b.index || 0));
+  let out = pages.map((p) => ({ title: p.title, local: (p.langlinks && p.langlinks[0] && p.langlinks[0]['*']) || '', sub: p.description || '위키백과', lat: p.coordinates[0].lat, lng: p.coordinates[0].lon }));
+  if (typeof t.lat === 'number') { const near = out.filter((r) => Geo.hav(t.lat, t.lng, r.lat, r.lng) < 400000); if (near.length) out = near; }
+  return out;
+}
 async function searchPlaces(q, t) {
-  const out = [];
+  const out = [], seen = new Set();
+  const push = (r) => { const k = r.lat.toFixed(4) + ',' + r.lng.toFixed(4); if (!seen.has(k) && isFinite(r.lat) && isFinite(r.lng)) { seen.add(k); out.push(r); } };
+  const ko = hasHangul(q), alias = ko ? koAliases(q, t) : [];
   if (CFG.AMAP_KEY) {
     try {
-      const u = `https://restapi.amap.com/v3/place/text?key=${CFG.AMAP_KEY}&keywords=${encodeURIComponent(q)}&city=${encodeURIComponent(t.cityZh || '')}&offset=10&page=1&extensions=base`;
+      const kw = alias.length ? alias[0].zh : q;
+      const u = `https://restapi.amap.com/v3/place/text?key=${CFG.AMAP_KEY}&keywords=${encodeURIComponent(kw)}&city=${encodeURIComponent((alias[0] && alias[0].city) || t.cityZh || '')}&offset=10&page=1&extensions=base`;
       const j = await (await fetch(u)).json();
-      (j.pois || []).forEach((p) => {
+      (j.pois || []).forEach((p, i) => {
         const [lng, lat] = String(p.location || '').split(',').map(Number); if (!lat) return;
         const [wl, wn] = Geo.toWgs(lat, lng);
-        out.push({ title: p.name, local: p.name, sub: [p.cityname, p.adname, typeof p.address === 'string' ? p.address : ''].filter(Boolean).join(' '), lat: wl, lng: wn });
+        push({ title: alias.length && i === 0 ? alias[0].ko : p.name, local: p.name, sub: [p.cityname, p.adname, typeof p.address === 'string' ? p.address : ''].filter(Boolean).join(' '), lat: wl, lng: wn });
       });
       if (out.length) return out;
     } catch (e) { console.warn('amap search failed', e); }
   }
-  const run = async (query, bias) => {
-    let u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&namedetails=1&accept-language=ko,zh-CN,en&q=${encodeURIComponent(query)}`;
-    if (bias && typeof t.lat === 'number') u += `&viewbox=${t.lng - 0.9},${t.lat + 0.7},${t.lng + 0.9},${t.lat - 0.7}`;
-    const res = await fetch(u); if (!res.ok) throw new Error('search ' + res.status);
-    return res.json();
-  };
-  let rows = await run(q, true);
-  if (!rows.length && (t.cityZh || t.city)) rows = await run(q + ' ' + (t.cityZh || t.city), false);
-  rows.forEach((r) => {
+  const fromRow = (r, koName) => {
     const parts = String(r.display_name || '').split(',').map((s) => s.trim());
-    const title = r.name || parts[0], nd = r.namedetails || {};
-    const local = nd['name:zh'] || nd.name || '';
-    out.push({ title, local: local && local !== title ? local : '', sub: parts.slice(1, 5).join(', '), lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
-  });
+    const nd = r.namedetails || {}, zh = nd['name:zh'] || nd.name || '';
+    const title = koName || nd['name:ko'] || r.name || parts[0];
+    return { title, local: zh && zh !== title ? zh : '', sub: parts.slice(1, 5).join(', '), lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+  };
+  let failed = 0, tried = 0;
+  const attempt = async (fn) => { tried++; try { return await fn(); } catch (e) { failed++; console.warn('search step failed', e); return []; } };
+  // 1) 한국어 이름이 사전에 있으면 중국어 이름으로 바꿔서 찾는다
+  for (const a of alias) {
+    const same = !t.cityZh || a.city === t.cityZh;
+    let rows = await attempt(() => nomi(a.zh, t, same));
+    if (!rows.length) rows = await attempt(() => nomi(a.zh + ' ' + a.city, t, false));
+    rows.slice(0, 3).forEach((r, i) => { const x = fromRow(r, i === 0 ? a.ko : ''); if (!x.local) x.local = a.zh; push(x); });
+  }
+  // 2) 입력한 그대로 찾는다
+  if (!out.length) {
+    let rows = await attempt(() => nomi(q, t, true));
+    if (!rows.length && (t.cityZh || t.city)) rows = await attempt(() => nomi(q + ' ' + (t.cityZh || t.city), t, false));
+    rows.forEach((r) => push(fromRow(r)));
+  }
+  // 3) 한국어인데 아직 못 찾았으면 한국어 위키백과에서 찾는다
+  if (ko && out.length < 3) {
+    let rows = await attempt(() => wikiKo(q, t));
+    if (!rows.length && t.city && !q.includes(t.city)) rows = await attempt(() => wikiKo(t.city + ' ' + q, t));
+    rows.forEach(push);
+  }
+  if (!out.length && failed === tried) throw new Error('search unreachable');
   return out;
 }
 
@@ -571,14 +645,14 @@ function editSheet(src, preset) {
 
   const kindBox = h('div', { class: 'chips' });
   const locBox = h('div'), resBox = h('div'), outBox = h('div'), splitBox = h('div', { class: 'chips' }), placeWrap = h('div');
-  const title = h('input', { type: 'text', value: d.title || '', placeholder: '장소 이름 (예: 星海广场, 성해광장)', enterKeyHint: 'search', oninput: (e) => { d.title = e.target.value; },
+  const title = h('input', { type: 'text', value: d.title || '', placeholder: '장소 이름 (예: 성해광장, 러시아거리)', enterKeyHint: 'search', oninput: (e) => { d.title = e.target.value; },
     onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } } });
   const searchBtn = h('button', { class: 'btn-ghost fit', onclick: doSearch }, '검색');
 
   function paintKinds() {
     kindBox.replaceChildren(...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintLoc(); paintOut(); } }, k.e + ' ' + k.n)));
     searchBtn.hidden = d.kind === 'expense';
-    title.placeholder = d.kind === 'expense' ? '무엇에 쓴 비용인지 (예: 택시비, 환전)' : '장소 이름 (예: 星海广场, 성해광장)';
+    title.placeholder = d.kind === 'expense' ? '무엇에 쓴 비용인지 (예: 택시비, 환전)' : '장소 이름 (예: 성해광장, 러시아거리)';
   }
   function paintLoc() {
     if (d.kind === 'expense') { locBox.replaceChildren(); resBox.replaceChildren(); return; }
@@ -595,7 +669,7 @@ function editSheet(src, preset) {
     resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 중…')));
     try {
       const rows = await searchPlaces(q, t);
-      if (!rows.length) { resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '결과가 없어. 중국어(한자)나 영어 이름으로 다시 검색하거나, "지도에서 지정"으로 직접 찍어줘.'))); return; }
+      if (!rows.length) { resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '결과가 없어. 띄어쓰기를 바꾸거나 더 짧게(예: "성해"), 또는 한자·영어 이름으로 다시 검색해줘. "지도에서 지정"으로 직접 찍어도 돼.'))); return; }
       resBox.replaceChildren(h('div', { class: 'results' }, rows.map((r) => {
         const far = typeof t.lat === 'number' ? Geo.hav(t.lat, t.lng, r.lat, r.lng) : null;
         return h('button', { onclick: () => { d.lat = r.lat; d.lng = r.lng; d.local = r.local || ''; d.addr = r.sub || ''; d.title = r.title; title.value = r.title; resBox.replaceChildren(); paintLoc(); } },
