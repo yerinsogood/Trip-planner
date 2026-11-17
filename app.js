@@ -102,6 +102,30 @@ const KINDS = [
 const KIND = Object.fromEntries(KINDS.map((x) => [x.k, x]));
 const DAY_COLORS = ['#4f7f72', '#c58a5c', '#7d7bb5', '#b5738c', '#5f8fb3', '#8c9a5e', '#a38c5f'];
 const MODES = { walk: { e: '🚶', n: '도보' }, taxi: { e: '🚕', n: '택시' }, transit: { e: '🚌', n: '대중교통' } };
+/* 공항: [코드, 한국어 이름, 현지 이름, 위도, 경도] */
+const AIRPORTS = [
+  ['ICN', '인천', '', 37.4602, 126.4407], ['GMP', '김포', '', 37.5583, 126.7906], ['PUS', '부산 김해', '', 35.1795, 128.9382],
+  ['CJU', '제주', '', 33.5113, 126.493], ['TAE', '대구', '', 35.8941, 128.6589], ['CJJ', '청주', '', 36.7166, 127.4991], ['MWX', '무안', '', 34.9914, 126.3828],
+  ['DLC', '대련', '大连周水子国际机场', 38.9657, 121.5386], ['YNT', '옌타이', '烟台蓬莱国际机场', 37.6572, 120.9872],
+  ['TAO', '칭다오', '青岛胶东国际机场', 36.362, 120.088], ['WEH', '웨이하이', '威海大水泊国际机场', 37.1871, 122.229],
+  ['PEK', '베이징 서우두', '北京首都国际机场', 40.0799, 116.6031], ['PKX', '베이징 다싱', '北京大兴国际机场', 39.5098, 116.4105],
+  ['PVG', '상하이 푸둥', '上海浦东国际机场', 31.1443, 121.8083], ['SHA', '상하이 훙차오', '上海虹桥国际机场', 31.1979, 121.3363],
+  ['SHE', '선양', '沈阳桃仙国际机场', 41.6398, 123.4834], ['TSN', '톈진', '天津滨海国际机场', 39.1244, 117.3462],
+  ['NRT', '도쿄 나리타', '成田国際空港', 35.772, 140.3929], ['HND', '도쿄 하네다', '羽田空港', 35.5494, 139.7798],
+  ['KIX', '오사카 간사이', '関西国際空港', 34.432, 135.2304], ['FUK', '후쿠오카', '福岡空港', 33.5859, 130.4507],
+];
+const AP = Object.fromEntries(AIRPORTS.map((a) => [a[0], a]));
+const AIRLINES = { KE: '대한항공', OZ: '아시아나항공', '7C': '제주항공', LJ: '진에어', TW: '티웨이항공', BX: '에어부산', RS: '에어서울', ZE: '이스타항공', YP: '에어프레미아', RF: '에어로케이',
+  CZ: '중국남방항공', MU: '중국동방항공', CA: '중국국제항공', SC: '산둥항공', HU: '하이난항공', ZH: '선전항공', '3U': '쓰촨항공', MF: '샤먼항공', HO: '준야오항공', '9C': '춘추항공', FM: '상하이항공', JL: '일본항공', NH: '전일본공수' };
+const apLabel = (v) => (AP[v] ? AP[v][1] : (v || ''));
+const airlineOf = (no) => AIRLINES[String(no || '').slice(0, 2).toUpperCase()] || '';
+const flTitle = (d) => { const f = d.fl || {}; return [f.no, [apLabel(f.from), apLabel(f.to)].filter(Boolean).join(' → ')].filter(Boolean).join(' · '); };
+function nearestAirport(t) {
+  if (!t || typeof t.lat !== 'number') return null;
+  let best = null, bd = 200000;
+  AIRPORTS.forEach((a) => { const dd = Geo.hav(t.lat, t.lng, a[3], a[4]); if (dd < bd) { bd = dd; best = a[0]; } });
+  return best;
+}
 const SEEDS = [
   { id: 'dalian-k7m2x9', trip: { title: '대련 여행', emoji: '🌊', start: '2026-12-11', end: '2026-12-13', city: '대련', cityZh: '大连', lat: 38.914, lng: 121.6147, members: [], rate: 200 },
     items: [{ id: 'dalian-k7m2x9-air', kind: 'air', title: '대련 저우수이쯔 국제공항', local: '大连周水子国际机场', lat: 38.9657, lng: 121.5386, day: '2026-12-11', order: 1, memo: '항공편·도착 시간을 적어줘' }] },
@@ -367,6 +391,7 @@ function renderList() {
   const days = tripDays(S.trip), list = $('list'), tools = $('dayTools');
   const show = S.day === 'all' ? days : [S.day];
   list.replaceChildren(); let total = 0;
+  if (S.day === 'all') list.append(bookingBox(days));
   show.forEach((day) => {
     const b = buildDay(day); total += b.items.length;
     const di = days.indexOf(day), color = day === 'none' ? '#9a9da2' : DAY_COLORS[di % DAY_COLORS.length];
@@ -390,12 +415,16 @@ function renderList() {
       } else {
         const k = KIND[it.kind] || KIND.etc;
         const card = h('button', { class: 'card' + (S.hl === it.id ? ' hl' : ''), id: 'c-' + it.id, onclick: () => editSheet(it) },
-          h('div', { class: 't1' }, it.time ? h('span', { class: 'time' }, it.time) : null, h('span', { class: 'ttl' }, it.title || '(이름 없음)')),
-          h('div', { class: 'kind' }, k.e + ' ' + k.n, it.local && it.local !== it.title ? ' · ' + it.local : '', it.kind === 'hotel' && it.day ? ` · ${md(it.day)}~${md(it.out || addDays(it.day, 1))}` : ''),
+          h('div', { class: 't1' }, it.time ? h('span', { class: 'time' }, it.time + (it.kind === 'air' && it.arr ? ' → ' + it.arr : '')) : null, h('span', { class: 'ttl' }, it.title || '(이름 없음)')),
+          it.kind === 'air' && it.fl
+            ? h('div', { class: 'kind' }, k.e + ' ' + [airlineOf(it.fl.no) || '항공편', it.fl.no].filter(Boolean).join(' · '))
+            : h('div', { class: 'kind' }, k.e + ' ' + k.n, it.local && it.local !== it.title ? ' · ' + it.local : '', it.kind === 'hotel' && it.day ? ` · ${md(it.day)}~${md(it.out || addDays(it.day, 1))}` : ''),
           it.memo ? h('div', { class: 'memo' }, it.memo) : null,
           h('div', { class: 'meta' },
             it.cost > 0 ? h('span', { class: 'chip cost' }, money(it.cost, it.cur) + (it.payer ? ' · ' + it.payer + ' 결제' : '')) : null,
             it.costNote ? h('span', { class: 'chip cost' }, it.costNote) : null,
+            it.ref ? h('span', { class: 'chip' }, '예약 ' + it.ref) : null,
+            it.link ? h('span', { class: 'chip link', onclick: (e) => { e.stopPropagation(); window.open(it.link, '_blank', 'noopener'); } }, '링크 열기 ↗') : null,
             !hasLoc(it) && it.kind !== 'move' && it.kind !== 'etc' ? h('span', { class: 'chip warn' }, '위치 없음') : null,
             it.by ? h('span', { class: 'chip' }, it.by) : null));
         if (S.reorder && S.day !== 'all') {
@@ -413,6 +442,22 @@ function renderList() {
   tools.replaceChildren(
     h('span', null, S.day === 'all' ? `전체 ${total}곳` : `${total}곳`),
     S.day !== 'all' && total > 1 ? h('button', { onclick: () => { S.reorder = !S.reorder; renderList(); } }, S.reorder ? '순서 편집 완료' : '순서 편집') : h('span'));
+}
+/* 전체 보기 맨 위: 항공편·숙소 한눈에 */
+function bookingBox(days) {
+  const byWhen = (a, b) => String(a.day || '9').localeCompare(String(b.day || '9')) || String(a.time || '').localeCompare(String(b.time || ''));
+  const airs = S.items.filter((x) => x.kind === 'air').sort(byWhen), hotels = S.items.filter((x) => x.kind === 'hotel').sort(byWhen);
+  const row = (it, main, sub) => h('button', { class: 'bk-row', onclick: () => editSheet(it) }, h('b', null, main), sub ? h('span', null, sub) : null);
+  const lastDay = days[days.length - 1] || '';
+  return h('div', { class: 'bk' },
+    h('div', { class: 'bk-h' }, '✈️ 항공편', h('button', { onclick: () => editSheet(null, { kind: 'air', day: airs.length && days.length > 1 ? lastDay : (days[0] || '') }) }, '+ 추가')),
+    airs.length ? airs.map((it) => row(it, it.title || '(이름 없음)',
+      [it.day && days.includes(it.day) ? mdw(it.day) : '날짜 미정', it.time ? it.time + (it.arr ? ' → ' + it.arr : '') : '', it.fl ? airlineOf(it.fl.no) : '', it.ref ? '예약 ' + it.ref : ''].filter(Boolean).join(' · ')))
+      : h('p', { class: 'bk-e' }, '가는 편·오는 편을 넣어두면 여기 모아서 보여줘'),
+    h('div', { class: 'bk-h' }, '🏨 숙소', h('button', { onclick: () => editSheet(null, { kind: 'hotel', day: days[0] || '' }) }, '+ 추가')),
+    hotels.length ? hotels.map((it) => row(it, it.title || '(이름 없음)',
+      [it.day ? `${md(it.day)} ~ ${md(it.out || addDays(it.day, 1))}` : '날짜 미정', it.local && it.local !== it.title ? it.local : '', it.ref ? '예약 ' + it.ref : ''].filter(Boolean).join(' · ')))
+      : h('p', { class: 'bk-e' }, '숙소를 넣으면 매일 숙소 기준으로 이동 거리를 계산해줘'));
 }
 function move(arr, idx, dir) {
   const a = arr[idx], b = arr[idx + dir]; if (!a || !b) return;
@@ -648,11 +693,61 @@ function editSheet(src, preset) {
   const title = h('input', { type: 'text', value: d.title || '', placeholder: '장소 이름 (예: 성해광장, 러시아거리)', enterKeyHint: 'search', oninput: (e) => { d.title = e.target.value; },
     onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } } });
   const searchBtn = h('button', { class: 'btn-ghost fit', onclick: doSearch }, '검색');
+  const flBox = h('div'), nameLabel = h('label', null, '이름'), timeLabel = h('label', null, '시간 (선택)'), bookBox = h('div');
+
+  /* 항공편: 편명·공항만 고르면 이름과 위치가 자동으로 채워진다 */
+  let lastAuto = flTitle(d);
+  function syncFlight() {
+    const wasAuto = !d.title || d.title === lastAuto || /공항$/.test(d.title);
+    lastAuto = flTitle(d);
+    if (wasAuto && lastAuto) { d.title = lastAuto; title.value = lastAuto; }
+    const f = d.fl || {}, cands = [f.to, f.from].filter((c) => AP[c]);
+    if (!cands.length) return;
+    // 지도에는 여행지 쪽 공항을 찍는다 (가는 편은 도착 공항, 오는 편은 출발 공항)
+    let pick = cands[0];
+    if (typeof t.lat === 'number') pick = cands.slice().sort((a, b) => Geo.hav(t.lat, t.lng, AP[a][3], AP[a][4]) - Geo.hav(t.lat, t.lng, AP[b][3], AP[b][4]))[0];
+    const a = AP[pick]; d.lat = a[3]; d.lng = a[4]; d.local = a[2] || ''; d.addr = a[1] + ' 공항 (' + a[0] + ')';
+    paintLoc();
+  }
+  function apSelect(key, label) {
+    const f = d.fl, custom = f[key] && !AP[f[key]];
+    const txt = h('input', { type: 'text', placeholder: '공항 이름', value: custom ? f[key] : '', hidden: !custom, style: 'margin-top:8px', oninput: (e) => { f[key] = e.target.value.trim(); syncFlight(); } });
+    const sel = h('select', { onchange: (e) => { const v = e.target.value; txt.hidden = v !== '_'; f[key] = v === '_' ? txt.value.trim() : v; syncFlight(); if (v === '_') txt.focus(); } },
+      h('option', { value: '' }, '선택'), AIRPORTS.map((a) => h('option', { value: a[0] }, `${a[1]} (${a[0]})`)), h('option', { value: '_' }, '직접 입력'));
+    sel.value = custom ? '_' : (f[key] || '');
+    return field(label, sel, txt);
+  }
+  function paintFlight() {
+    if (d.kind !== 'air') { flBox.replaceChildren(); return; }
+    if (!d.fl) {
+      const near = nearestAirport(t), back = days.length > 1 && d.day === days[days.length - 1];
+      d.fl = { no: '', from: back ? (near || '') : 'ICN', to: back ? 'ICN' : (near || '') };
+      syncFlight();
+    }
+    const hint = h('p', { class: 'hint', style: 'margin-top:6px' }, airlineOf(d.fl.no));
+    flBox.replaceChildren(h('div', { class: 'flbox' },
+      field('편명', h('input', { type: 'text', value: d.fl.no || '', placeholder: '예: KE869', autocapitalize: 'characters', autocomplete: 'off', maxLength: 8,
+        oninput: (e) => { d.fl.no = e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); hint.textContent = airlineOf(d.fl.no); syncFlight(); } }), hint),
+      h('div', { class: 'rowf' }, apSelect('from', '출발 공항'), apSelect('to', '도착 공항')),
+      h('p', { class: 'hint' }, '편명과 공항만 고르면 이름·지도 위치가 자동으로 채워져. 시간은 항공권에 적힌 현지 시각 그대로 아래에 적어줘.')));
+  }
+  function paintBook() {
+    const show = d.kind === 'air' || d.kind === 'hotel' || d.ref || d.link;
+    bookBox.replaceChildren(show ? h('div', { class: 'rowf' },
+      field('예약번호 (선택)', h('input', { type: 'text', value: d.ref || '', placeholder: '예: ABC123', autocomplete: 'off', oninput: (e) => { d.ref = e.target.value; } })),
+      field('예약 링크 (선택)', h('input', { type: 'text', inputMode: 'url', value: d.link || '', placeholder: '예약 확인 페이지 주소', autocomplete: 'off', oninput: (e) => { d.link = e.target.value; } }))) : null);
+  }
+  const arrIn = h('input', { type: 'time', value: d.arr || '', onchange: (e) => { d.arr = e.target.value; } });
+  const arrField = field('도착 시간', arrIn);
 
   function paintKinds() {
-    kindBox.replaceChildren(...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintLoc(); paintOut(); } }, k.e + ' ' + k.n)));
-    searchBtn.hidden = d.kind === 'expense';
-    title.placeholder = d.kind === 'expense' ? '무엇에 쓴 비용인지 (예: 택시비, 환전)' : '장소 이름 (예: 성해광장, 러시아거리)';
+    kindBox.replaceChildren(...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintFlight(); paintLoc(); paintOut(); paintBook(); } }, k.e + ' ' + k.n)));
+    const air = d.kind === 'air';
+    searchBtn.hidden = d.kind === 'expense' || air;
+    nameLabel.textContent = air ? '이름 (자동으로 채워져, 고쳐도 돼)' : d.kind === 'hotel' ? '숙소 이름' : '이름';
+    timeLabel.textContent = air ? '출발 시간' : d.kind === 'hotel' ? '체크인 시간 (선택)' : '시간 (선택)';
+    arrField.hidden = !air;
+    title.placeholder = d.kind === 'expense' ? '무엇에 쓴 비용인지 (예: 택시비, 환전)' : air ? '예: KE869 · 인천 → 대련' : d.kind === 'hotel' ? '호텔 이름 검색 (한국어·한자·영어)' : '장소 이름 (예: 성해광장, 러시아거리)';
   }
   function paintLoc() {
     if (d.kind === 'expense') { locBox.replaceChildren(); resBox.replaceChildren(); return; }
@@ -704,17 +799,20 @@ function editSheet(src, preset) {
   const cur = h('select', { class: 'fit', style: 'width:96px;flex:none', onchange: (e) => { d.cur = e.target.value; } }, h('option', { value: 'CNY' }, '¥ 위안'), h('option', { value: 'KRW' }, '₩ 원'));
   cur.value = d.cur || 'CNY';
 
-  paintKinds(); paintLoc(); paintOut(); paintSplit();
+  paintKinds(); paintFlight(); paintLoc(); paintOut(); paintSplit(); paintBook();
   placeWrap.append(h('div', { class: 'rowf' }, title, searchBtn), resBox, locBox);
 
   openSheet(
-    h('h2', null, isNew ? (d.kind === 'expense' ? '비용 추가' : '일정 추가') : '수정'),
+    h('h2', null, isNew ? (d.kind === 'expense' ? '비용 추가' : d.kind === 'air' ? '항공편 추가' : d.kind === 'hotel' ? '숙소 추가' : '일정 추가') : '수정'),
     field('종류', kindBox),
-    field('이름', placeWrap),
+    flBox,
+    h('div', { class: 'f' }, nameLabel, placeWrap),
+    field('날짜', daySel),
     h('div', { class: 'rowf' },
-      field('날짜', daySel),
-      field('시간 (선택)', h('input', { type: 'time', value: d.time || '', onchange: (e) => { d.time = e.target.value; } }))),
+      h('div', { class: 'f' }, timeLabel, h('input', { type: 'time', value: d.time || '', onchange: (e) => { d.time = e.target.value; } })),
+      arrField),
     outBox,
+    bookBox,
     field('비용 (선택)', h('div', { class: 'rowf' },
       h('input', { type: 'number', inputMode: 'decimal', placeholder: '금액', value: d.cost > 0 ? d.cost : '', oninput: (e) => { d.cost = parseFloat(e.target.value) || 0; } }), cur)),
     h('div', { class: 'rowf' },
@@ -727,6 +825,9 @@ function editSheet(src, preset) {
       if (!d.title) { toast('이름을 적어줘'); title.focus(); return; }
       if (!d.cost) { delete d.cost; }
       if (d.kind !== 'hotel') delete d.out;
+      if (d.kind !== 'air') { delete d.fl; delete d.arr; }
+      d.ref = (d.ref || '').trim(); if (!d.ref) delete d.ref;
+      d.link = (d.link || '').trim(); if (!d.link) delete d.link; else if (!/^https?:\/\//i.test(d.link)) d.link = 'https://' + d.link;
       if (isNew || (src && src.day !== d.day)) d.order = Math.max(0, ...S.items.filter((x) => x.day === d.day).map((x) => x.order || 0)) + 1;
       if (isNew) d.by = S.me;
       if (d.kind === 'expense') S.tab = 'cost'; else if (isNew && S.tab === 'plan' && S.day !== 'all') S.day = d.day || 'none';
@@ -846,7 +947,7 @@ function markText(text, q) {
 function renderSearch() {
   const q = $('searchInput').value.trim().toLowerCase(), box = $('searchResults'), days = tripDays(S.trip);
   if (!q) { box.replaceChildren(h('div', { class: 'empty' }, '이 여행에 넣어둔 일정·메모·비용에서 찾아줘')); return; }
-  const hits = S.items.filter((x) => [x.title, x.local, x.addr, x.memo, x.costNote, x.by, x.payer, (KIND[x.kind] || {}).n].some((v) => v && String(v).toLowerCase().includes(q)))
+  const hits = S.items.filter((x) => [x.title, x.local, x.addr, x.memo, x.costNote, x.by, x.payer, x.ref, x.fl && x.fl.no, x.fl && airlineOf(x.fl.no), (KIND[x.kind] || {}).n].some((v) => v && String(v).toLowerCase().includes(q)))
     .sort((a, b) => String(a.day || '9').localeCompare(String(b.day || '9')) || (a.order || 0) - (b.order || 0));
   if (!hits.length) { box.replaceChildren(h('div', { class: 'empty' }, '찾는 일정이 없어')); return; }
   box.replaceChildren(...hits.map((x) => h('button', { class: 'sr', onclick: () => {
