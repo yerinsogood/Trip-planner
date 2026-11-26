@@ -57,7 +57,10 @@ const fmtMin = (min) => { min = Math.max(1, Math.round(min)); return min < 60 ? 
 /* ───────── 좌표 (WGS-84 ↔ GCJ-02: 중국 지도는 좌표가 살짝 어긋나 있어서 보정 필요) ───────── */
 const Geo = (() => {
   const a = 6378245.0, ee = 0.00669342162296594323, PI = Math.PI;
-  const inChina = (lat, lng) => lng > 72.004 && lng < 137.8347 && lat > 0.8293 && lat < 55.8271;
+  // 중국 대략 범위. 한국·일본은 같은 네모 안에 들어오지만 보정하면 안 돼서 뺀다
+  const inKorea = (lat, lng) => lat > 33 && lat < 38.7 && lng > 124.5 && lng < 131.2;
+  const inJapan = (lat, lng) => lat > 24 && lat < 46 && lng > 129.2 && !(lat > 41 && lng < 131.3);
+  const inChina = (lat, lng) => lng > 72.004 && lng < 137.8347 && lat > 0.8293 && lat < 55.8271 && !inKorea(lat, lng) && !inJapan(lat, lng);
   function tLat(x, y) {
     let r = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
     r += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
@@ -432,7 +435,7 @@ function renderList() {
             it.cost > 0 ? h('span', { class: 'chip cost' }, money(it.cost, it.cur) + (it.payer ? ' · ' + it.payer + ' 결제' : '')) : null,
             it.costNote ? h('span', { class: 'chip cost' }, it.costNote) : null,
             it.ref ? h('span', { class: 'chip' }, '예약 ' + it.ref) : null,
-            it.link ? h('span', { class: 'chip link', onclick: (e) => { e.stopPropagation(); window.open(it.link, '_blank', 'noopener'); } }, '링크 열기 ↗') : null,
+            it.link ? h('span', { class: 'chip link', onclick: (e) => { e.stopPropagation(); window.open(it.link, '_blank', 'noopener'); } }, isMapLink(it.link) ? '지도 열기 ↗' : '링크 열기 ↗') : null,
             !hasLoc(it) && it.kind !== 'move' && it.kind !== 'etc' ? h('span', { class: 'chip warn' }, '위치 없음') : null,
             it.by ? h('span', { class: 'chip' }, it.by) : null));
         if (S.reorder && S.day !== 'all') {
@@ -689,6 +692,53 @@ async function searchPlaces(q, t) {
   return out;
 }
 
+/* ───────── 지도 공유 링크 붙여넣기 ─────────
+   구글지도·고덕지도에서 "공유 → 링크 복사"한 걸 붙여넣으면 이름과 위치를 꺼낸다.
+   중국 안에서 두 지도는 GCJ-02 좌표라서 앱 기준(WGS-84)으로 바꿔 저장한다. */
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+const isMapLink = (u) => /(^|\.)(maps\.app\.goo\.gl|goo\.gl|g\.co|google\.[a-z.]+|amap\.com)(\/|$)/i.test((u.match(/^https?:\/\/([^/?#]+)/i) || [])[1] || '');
+function parseMapUrl(raw) {
+  let u = String(raw || '');
+  for (let i = 0; i < 3; i++) { try { const x = decodeURIComponent(u); if (x === u) break; u = x; } catch (e) { break; } }
+  const okLat = (v) => v > 0.8 && v < 56, okLng = (v) => v > 72 && v < 138;
+  const okAny = (a, b) => Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
+  let lat = null, lng = null, m;
+  if ((m = u.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/))) { lat = +m[1]; lng = +m[2]; }                         // 구글: 장소 정확한 위치
+  else if ((m = u.match(/[?&](?:q|query|ll|daddr|destination|center)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/))) { lat = +m[1]; lng = +m[2]; }
+  else if ((m = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) { lat = +m[1]; lng = +m[2]; }                          // 구글: 화면 중심
+  else {
+    // 고덕 등: 소수점 많은 숫자 두 개를 찾아서 위도·경도를 범위로 구분
+    const nums = (u.match(/-?\d{1,3}\.\d{4,}/g) || []).map(Number);
+    for (let i = 0; i + 1 < nums.length && lat == null; i++) {
+      const [a, b] = [nums[i], nums[i + 1]];
+      if (okLat(a) && okLng(b)) { lat = a; lng = b; } else if (okLng(a) && okLat(b)) { lat = b; lng = a; }
+    }
+  }
+  if (lat != null && !okAny(lat, lng)) { lat = lng = null; }
+  let name = '';
+  if ((m = u.match(/\/maps\/place\/([^/@?]+)/))) name = m[1];
+  else if ((m = u.match(/[?&](?:name|keywords|query|q)=([^&#]+)/))) name = m[1];
+  else if ((m = u.match(/[?&]p=[^,&]*,-?\d+\.\d+,-?\d+\.\d+,([^,&#]+)/))) name = m[1];
+  name = name.replace(/\+/g, ' ').trim();
+  if (/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(name)) name = '';
+  return { lat, lng, name };
+}
+async function resolveMapLink(text) {
+  const url = (String(text).match(URL_RE) || [''])[0].replace(/[)\]}>.,]+$/, '');
+  // 공유 문구에 링크 앞뒤로 붙어 오는 장소 이름 (예: "蜀南园 https://maps.app.goo.gl/…")
+  const around = String(text).replace(url, ' ').replace(/구글\s*지도|Google\s*Maps|高德地图|에서\s*보기|분享|分享/gi, ' ').split('\n').map((x) => x.trim()).filter(Boolean)[0] || '';
+  let p = parseMapUrl(url), finalUrl = url;
+  if (p.lat == null) {
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 9000);
+    try {
+      const j = await (await fetch('api/resolve?u=' + encodeURIComponent(url), { signal: ctl.signal })).json();
+      if (j && j.url) { finalUrl = j.url; const q = parseMapUrl(j.url + '\n' + (j.meta || '')); p = { lat: q.lat, lng: q.lng, name: q.name || p.name || ((j.meta || '').split('\n')[0] || '').replace(/\s*[-·|]\s*(Google|高德).*$/i, '') }; }
+    } catch (e) { console.warn('resolve failed', e); } finally { clearTimeout(tm); }
+  }
+  if (p.lat != null) { const w = Geo.toWgs(p.lat, p.lng); p.lat = +w[0].toFixed(6); p.lng = +w[1].toFixed(6); }
+  return { url, finalUrl, lat: p.lat, lng: p.lng, name: (p.name || around || '').slice(0, 60) };
+}
+
 /* ───────── 일정 추가/수정 시트 ───────── */
 function editSheet(src, preset) {
   const t = S.trip, days = tripDays(t), isNew = !src;
@@ -698,7 +748,8 @@ function editSheet(src, preset) {
 
   const kindBox = h('div', { class: 'chips' });
   const locBox = h('div'), resBox = h('div'), outBox = h('div'), splitBox = h('div', { class: 'chips' }), placeWrap = h('div');
-  const title = h('input', { type: 'text', value: d.title || '', placeholder: '장소 이름 (예: 성해광장, 러시아거리)', enterKeyHint: 'search', oninput: (e) => { d.title = e.target.value; },
+  const title = h('input', { type: 'text', value: d.title || '', placeholder: '장소 이름 (예: 성해광장, 러시아거리)', enterKeyHint: 'search',
+    oninput: (e) => { d.title = e.target.value; if (d.kind !== 'expense' && URL_RE.test(d.title) && isMapLink((d.title.match(URL_RE) || [''])[0])) fromLink(d.title); },
     onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } } });
   const searchBtn = h('button', { class: 'btn-ghost fit', onclick: doSearch }, '검색');
   const flBox = h('div'), nameLabel = h('label', null, '이름'), timeLabel = h('label', null, '시간 (선택)'), bookBox = h('div');
@@ -743,10 +794,29 @@ function editSheet(src, preset) {
     const show = d.kind === 'air' || d.kind === 'hotel' || d.ref || d.link;
     fill(bookBox, show ? h('div', { class: 'rowf' },
       field('예약번호 (선택)', h('input', { type: 'text', value: d.ref || '', placeholder: '예: ABC123', autocomplete: 'off', oninput: (e) => { d.ref = e.target.value; } })),
-      field('예약 링크 (선택)', h('input', { type: 'text', inputMode: 'url', value: d.link || '', placeholder: '예약 확인 페이지 주소', autocomplete: 'off', oninput: (e) => { d.link = e.target.value; } }))) : null);
+      field(d.kind === 'air' || d.kind === 'hotel' ? '예약 링크 (선택)' : '링크', h('input', { type: 'text', inputMode: 'url', value: d.link || '', placeholder: d.kind === 'air' || d.kind === 'hotel' ? '예약 확인 페이지 주소' : '지도·블로그 주소', autocomplete: 'off', oninput: (e) => { d.link = e.target.value; } }))) : null);
   }
   const arrIn = h('input', { type: 'time', value: d.arr || '', onchange: (e) => { d.arr = e.target.value; } });
   const arrField = field('도착 시간', arrIn);
+
+  let linkBusy = false;
+  async function fromLink(text) {
+    if (linkBusy) return; linkBusy = true;
+    title.value = ''; d.title = '';
+    fill(resBox, h('div', { class: 'results' }, h('div', { class: 'msg' }, '지도 링크 확인 중…')));
+    const r = await resolveMapLink(text); linkBusy = false;
+    d.link = r.url; paintBook();
+    if (r.name) { d.title = r.name; title.value = r.name; if (/[\u4e00-\u9fff]/.test(r.name)) d.local = r.name; }
+    if (r.lat != null) {
+      d.lat = r.lat; d.lng = r.lng; d.addr = '';
+      fill(resBox, h('p', { class: 'hint', style: 'margin-top:6px' }, '✓ 링크에서 위치를 가져왔어.' + (r.name ? ' 이름은 한국어로 바꿔도 돼.' : ' 이름만 적어줘.')));
+    } else {
+      fill(resBox, h('div', { class: 'results' }, h('div', { class: 'msg' }, r.name
+        ? '이름은 가져왔는데 위치는 못 찾았어. "지도에서 지정"으로 찍어줘. (링크는 저장돼서 카드에서 열 수 있어)'
+        : '이 링크에서는 위치를 못 찾았어. 이름을 적고 "지도에서 지정"으로 찍어줘.')));
+    }
+    paintLoc();
+  }
 
   function paintKinds() {
     fill(kindBox, ...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintFlight(); paintLoc(); paintOut(); paintBook(); } }, k.e + ' ' + k.n)));
@@ -808,7 +878,8 @@ function editSheet(src, preset) {
   cur.value = d.cur || 'CNY';
 
   paintKinds(); paintFlight(); paintLoc(); paintOut(); paintSplit(); paintBook();
-  placeWrap.append(h('div', { class: 'rowf' }, title, searchBtn), resBox, locBox);
+  placeWrap.append(h('div', { class: 'rowf' }, title, searchBtn),
+    h('p', { class: 'hint', style: 'margin-top:6px' }, '💡 검색이 안 되면 구글지도·고덕지도에서 "공유 → 링크 복사" 해서 여기 붙여넣어줘'), resBox, locBox);
 
   openSheet(
     h('h2', null, isNew ? (d.kind === 'expense' ? '비용 추가' : d.kind === 'air' ? '항공편 추가' : d.kind === 'hotel' ? '숙소 추가' : '일정 추가') : '수정'),

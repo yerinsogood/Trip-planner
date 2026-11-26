@@ -1,5 +1,5 @@
 /* 오프라인에서도 앱이 열리게: 온라인이면 최신 파일, 안 되면(3초) 저장해둔 파일 */
-const CACHE = 'trip-v6';
+const CACHE = 'trip-v7';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.json', 'icon.svg', 'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/supabase.js', 'vendor/fonts/Pretendard-Regular.subset.woff2', 'vendor/fonts/Pretendard-SemiBold.subset.woff2', 'vendor/fonts/Pretendard-Bold.subset.woff2'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
@@ -7,7 +7,7 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const req = e.request, url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== location.origin) return;
+  if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req, { ignoreSearch: true });
