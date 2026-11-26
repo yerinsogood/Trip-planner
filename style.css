@@ -191,3 +191,4 @@ mark{background:#f1e4b8;color:inherit;border-radius:3px;padding:0 1px}
 .flbox{background:var(--ac-bg);border-radius:14px;padding:14px 12px 12px;margin-bottom:16px}
 .flbox .f:last-of-type{margin-bottom:8px}
 .chip.link{background:var(--ac-bg);color:var(--ac-d)}
+.chip.edited{background:transparent;color:var(--mut);font-weight:500;padding-left:2px}

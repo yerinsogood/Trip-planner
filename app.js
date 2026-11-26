@@ -51,6 +51,14 @@ function dday(t) {
 const won = (n) => '₩' + Math.round(n).toLocaleString('ko-KR');
 const yuan = (n) => '¥' + (Math.round(n * 100) / 100).toLocaleString('ko-KR');
 const money = (n, cur) => (cur === 'KRW' ? won(n) : yuan(n));
+/* 마지막 수정 시각: "방금", "5분 전", "3시간 전", "11.26 14:03" */
+function ago(iso) {
+  const t = Date.parse(iso || ''); if (!t) return '';
+  const min = Math.round((Date.now() - t) / 60000);
+  if (min < 1) return '방금'; if (min < 60) return min + '분 전'; if (min < 24 * 60) return Math.round(min / 60) + '시간 전';
+  const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+const stamp = (it) => { it.editedBy = S.me || ''; it.editedAt = new Date().toISOString(); return it; };
 const fmtDist = (m) => (m < 1000 ? Math.max(10, Math.round(m / 10) * 10) + 'm' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + 'km');
 const fmtMin = (min) => { min = Math.max(1, Math.round(min)); return min < 60 ? min + '분' : Math.floor(min / 60) + '시간' + (min % 60 ? ' ' + (min % 60) + '분' : ''); };
 
@@ -437,7 +445,9 @@ function renderList() {
             it.ref ? h('span', { class: 'chip' }, '예약 ' + it.ref) : null,
             it.link ? h('span', { class: 'chip link', onclick: (e) => { e.stopPropagation(); window.open(it.link, '_blank', 'noopener'); } }, isMapLink(it.link) ? '지도 열기 ↗' : '링크 열기 ↗') : null,
             !hasLoc(it) && it.kind !== 'move' && it.kind !== 'etc' ? h('span', { class: 'chip warn' }, '위치 없음') : null,
-            it.by ? h('span', { class: 'chip' }, it.by) : null));
+            it.by ? h('span', { class: 'chip' }, it.by) : null,
+            it.editedBy && it.editedAt && (it.editedBy !== it.by || Date.parse(it.editedAt) - Date.parse(it.createdAt || 0) > 60000)
+              ? h('span', { class: 'chip edited' }, '✎ ' + it.editedBy + ' · ' + ago(it.editedAt)) : null));
         if (S.reorder && S.day !== 'all') {
           const idx = b.items.indexOf(it);
           right.push(h('div', { class: 'card-wrap' }, card, h('div', { class: 'ord' },
@@ -908,10 +918,12 @@ function editSheet(src, preset) {
       d.ref = (d.ref || '').trim(); if (!d.ref) delete d.ref;
       d.link = (d.link || '').trim(); if (!d.link) delete d.link; else if (!/^https?:\/\//i.test(d.link)) d.link = 'https://' + d.link;
       if (isNew || (src && src.day !== d.day)) d.order = Math.max(0, ...S.items.filter((x) => x.day === d.day).map((x) => x.order || 0)) + 1;
-      if (isNew) d.by = S.me;
+      if (isNew) { d.by = S.me; d.createdAt = new Date().toISOString(); }
       if (d.kind === 'expense') S.tab = 'cost'; else if (isNew && S.tab === 'plan' && S.day !== 'all') S.day = d.day || 'none';
-      S.hl = d.id; S.fit = true; closeSheet(); saveItem(d);
+      stamp(d); S.hl = d.id; S.fit = true; closeSheet(); saveItem(d);
     } }, '저장'),
+    isNew ? null : h('p', { class: 'hint center', style: 'margin-top:12px' },
+      [src.by ? src.by + ' 추가' : '', src.editedBy ? '마지막 수정 ' + src.editedBy + ' · ' + ago(src.editedAt) : ''].filter(Boolean).join(' · ')),
     isNew ? null : h('button', { class: 'btn-danger', onclick: () => { closeSheet(); removeItem(src); } }, '삭제'));
 }
 
@@ -932,7 +944,7 @@ function legSheet(it, from, leg) {
     h('button', { class: 'btn-primary', style: 'width:100%', onclick: () => {
       const n = Object.assign({}, it); if (!set.min) delete set.min;
       if (Object.keys(set).length) n.leg = set; else delete n.leg;
-      closeSheet(); saveItem(n);
+      stamp(n); closeSheet(); saveItem(n);
     } }, '저장'));
 }
 
@@ -1001,11 +1013,12 @@ function nameSheet(after) {
       cachePut(); queue({ k: 'trip', id: S.tripId, data: S.trip });
       // 이름을 바꾸면 결제·정산·작성자 기록도 같이 바꿔준다 (안 그러면 정산에 옛 이름이 유령처럼 남는다)
       S.items.slice().forEach((it) => {
-        const usedIn = it.payer === old || it.by === old || (it.split || []).includes(old);
+        const usedIn = it.payer === old || it.by === old || it.editedBy === old || (it.split || []).includes(old);
         if (!usedIn) return;
         const n = Object.assign({}, it);
         if (n.payer === old) n.payer = v;
         if (n.by === old) n.by = v;
+        if (n.editedBy === old) n.editedBy = v;
         if (n.split) n.split = n.split.map((m) => (m === old ? v : m));
         saveItem(n, true);
       });
