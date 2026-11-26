@@ -22,6 +22,8 @@ function h(tag, attrs, ...kids) {
   }
   return el;
 }
+/* replaceChildren에 null을 넘기면 화면에 "null" 글자가 찍혀서, 빈 값은 걸러서 넣는다 */
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false && k !== ''));
 const ls = {
   get(k, d) { try { const v = localStorage.getItem('tp.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('tp.' + k, JSON.stringify(v)); } catch (e) {} },
@@ -246,10 +248,14 @@ function removeItem(it) {
   renderAll();
   toast('삭제했어', '되돌리기', () => saveItem(it));
 }
-function ensureMember() {
+/* 처음 들어왔을 때(또는 이름을 바꿨을 때) 한 번만 멤버에 넣는다.
+   예전엔 열 때마다 다시 넣어서, 설정에서 뺀 이름이 계속 되살아났다. */
+function ensureMember(force) {
   if (!S.me || !S.trip) return;
-  const m = S.trip.members || [];
+  const key = 'joined.' + S.tripId, m = S.trip.members || [];
+  if (!force && ls.get(key, '') === S.me) return; // 이미 한 번 들어온 이름: 누가 뺐으면 뺀 대로 둔다
   if (!m.includes(S.me)) { S.trip.members = m.concat(S.me); cachePut(); queue({ k: 'trip', id: S.tripId, data: S.trip }); }
+  ls.set(key, S.me);
 }
 
 /* ───────── 이동 거리·시간 ───────── */
@@ -260,8 +266,10 @@ function roadInfo(a, b) {
   const c = routes[key];
   if (c) return { d: c.d, t: c.t, straight, exact: true };
   if (straight > 30 && straight < 400000 && !routeQ.includes(key) && routes[key] !== 0) { routeQ.push(key); pumpRoutes(); }
-  const d = straight * 1.35;
-  return { d, t: d / 6.9 + 90, straight, exact: false }; // 시내 평균 약 25km/h 가정
+  // 경로 서버에 못 닿으면 어림값: 가까운 곳은 시내 속도, 먼 곳(공항 등)은 고속도로 속도로
+  const d = straight * (straight < 5000 ? 1.35 : 1.2);
+  const t = Math.min(d, 10000) / 9 + Math.max(0, d - 10000) / 20 + 90;
+  return { d, t, straight, exact: false };
 }
 async function pumpRoutes() {
   if (routeBusy) return; routeBusy = true;
@@ -290,7 +298,7 @@ function legInfo(a, b, set) {
   const mode = (set && set.mode) || (walkD <= 1200 ? 'walk' : 'taxi');
   let dist = r.d, min;
   if (mode === 'walk') { dist = walkD; min = walkD / 75; }
-  else if (mode === 'taxi') min = (r.t * 1.25) / 60 + 3; // 신호·정체 여유 + 잡는 시간
+  else if (mode === 'taxi') min = (r.t * (r.exact ? 1.25 : 1)) / 60 + 3; // 신호·정체 여유 + 잡는 시간
   else min = (r.t * 1.7) / 60 + 10; // 대중교통은 대략치
   const manual = set && set.min > 0;
   if (manual) min = set.min;
@@ -341,7 +349,7 @@ const costItems = () => S.items.filter((x) => x.cost > 0);
 function renderHome() {
   $('trip').hidden = true; $('home').hidden = false;
   $('btnMe').textContent = S.me ? `${S.me} ✎` : '이름 정하기';
-  const list = $('homeList'); list.replaceChildren();
+  const list = $('homeList'); fill(list);
   const ids = known().slice().sort((x, y) => { const a = cacheGet(x), b = cacheGet(y); return String((a && a.trip && a.trip.start) || '9').localeCompare(String((b && b.trip && b.trip.start) || '9')); });
   ids.forEach((id) => {
     const c = cacheGet(id); const t = c && c.trip;
@@ -361,8 +369,8 @@ function renderAll() {
   const t = S.trip;
   if (!t) {
     $('tTitle').textContent = S.missing ? '여행을 찾을 수 없어' : '불러오는 중…'; $('tSub').textContent = '';
-    $('list').replaceChildren(h('div', { class: 'empty' }, S.missing ? '링크가 잘못됐거나 삭제된 여행이야' : (S.net === 'off' ? '인터넷 연결을 확인해줘' : '')));
-    $('dayBar').replaceChildren(); $('dayTools').replaceChildren(); renderStatus(); return;
+    fill($('list'), h('div', { class: 'empty' }, S.missing ? '링크가 잘못됐거나 삭제된 여행이야' : (S.net === 'off' ? '인터넷 연결을 확인해줘' : '')));
+    fill($('dayBar')); fill($('dayTools')); renderStatus(); return;
   }
   $('tTitle').textContent = t.title;
   $('tSub').textContent = `${mdw(t.start)} – ${mdw(t.end)} · ${dday(t)} · ${(t.members || []).join(', ') || '멤버 없음'}`;
@@ -384,13 +392,13 @@ function renderDayBar() {
   if (S.day !== 'all' && S.day !== 'none' && !days.includes(S.day)) S.day = 'all';
   const mk = (key, label, small) => h('button', { class: S.day === key ? 'on' : '', onclick: () => { S.day = key; S.fit = true; S.reorder = false; renderAll(); } }, label, small ? h('small', null, small) : null);
   const noneN = dayItems('none').length;
-  bar.replaceChildren(mk('all', '전체'), ...days.map((d, i) => mk(d, 'Day ' + (i + 1), mdw(d))), mk('none', '보관함', noneN ? String(noneN) : ''));
+  fill(bar, mk('all', '전체'), ...days.map((d, i) => mk(d, 'Day ' + (i + 1), mdw(d))), mk('none', '보관함', noneN ? String(noneN) : ''));
 }
 function renderList() {
   if (!S.trip || S.tab !== 'plan') return;
   const days = tripDays(S.trip), list = $('list'), tools = $('dayTools');
   const show = S.day === 'all' ? days : [S.day];
-  list.replaceChildren(); let total = 0;
+  fill(list); let total = 0;
   if (S.day === 'all') list.append(bookingBox(days));
   show.forEach((day) => {
     const b = buildDay(day); total += b.items.length;
@@ -439,7 +447,7 @@ function renderList() {
         h('div', { style: 'min-width:0' }, right)));
     });
   });
-  tools.replaceChildren(
+  fill(tools, 
     h('span', null, S.day === 'all' ? `전체 ${total}곳` : `${total}곳`),
     S.day !== 'all' && total > 1 ? h('button', { onclick: () => { S.reorder = !S.reorder; renderList(); } }, S.reorder ? '순서 편집 완료' : '순서 편집') : h('span'));
 }
@@ -539,7 +547,7 @@ function renderCost() {
   const cny = items.filter((x) => x.cur !== 'KRW').reduce((s, x) => s + x.cost, 0);
   const krw = items.filter((x) => x.cur === 'KRW').reduce((s, x) => s + x.cost, 0);
   const rateIn = h('input', { type: 'number', inputMode: 'decimal', value: t.rate || 200, onchange: (e) => { const r = parseFloat(e.target.value); if (r > 0) { S.trip.rate = r; saveTrip(); } } });
-  v.replaceChildren(h('div', { class: 'box' },
+  fill(v, h('div', { class: 'box' },
     h('h3', null, '총 비용 (원화 환산)'), h('div', { class: 'big' }, won(total)),
     h('div', { class: 'subline' }, [cny ? yuan(cny) : '', krw ? won(krw) : ''].filter(Boolean).join(' + ') || '아직 입력한 비용이 없어', members.length > 1 && total ? ` · 1인당 약 ${won(total / members.length)} (${members.length}명)` : ''),
     h('div', { class: 'rate' }, '환율  1위안 =', rateIn, '원', h('span', { class: 'hint' }, '(직접 수정)'))));
@@ -565,12 +573,12 @@ function renderCost() {
 }
 
 /* ───────── 시트 공통 ───────── */
-function openSheet(...kids) { const s = $('sheet'); s.replaceChildren(...kids); s.hidden = false; $('sheetBg').hidden = false; s.scrollTop = 0; }
+function openSheet(...kids) { const s = $('sheet'); fill(s, ...kids); s.hidden = false; $('sheetBg').hidden = false; s.scrollTop = 0; }
 function closeSheet() { $('sheet').hidden = true; $('sheetBg').hidden = true; }
 let toastT = null;
 function toast(msg, act, fn) {
   const el = $('toast'); clearTimeout(toastT);
-  el.replaceChildren(h('span', null, msg), act ? h('button', { onclick: () => { el.hidden = true; fn(); } }, act) : null);
+  fill(el, h('span', null, msg), act ? h('button', { onclick: () => { el.hidden = true; fn(); } }, act) : null);
   el.hidden = false; toastT = setTimeout(() => { el.hidden = true; }, act ? 6000 : 2500);
 }
 const field = (label, ...kids) => h('div', { class: 'f' }, label ? h('label', null, label) : null, kids);
@@ -718,14 +726,14 @@ function editSheet(src, preset) {
     return field(label, sel, txt);
   }
   function paintFlight() {
-    if (d.kind !== 'air') { flBox.replaceChildren(); return; }
+    if (d.kind !== 'air') { fill(flBox); return; }
     if (!d.fl) {
       const near = nearestAirport(t), back = days.length > 1 && d.day === days[days.length - 1];
       d.fl = { no: '', from: back ? (near || '') : 'ICN', to: back ? 'ICN' : (near || '') };
       syncFlight();
     }
     const hint = h('p', { class: 'hint', style: 'margin-top:6px' }, airlineOf(d.fl.no));
-    flBox.replaceChildren(h('div', { class: 'flbox' },
+    fill(flBox, h('div', { class: 'flbox' },
       field('편명', h('input', { type: 'text', value: d.fl.no || '', placeholder: '예: KE869', autocapitalize: 'characters', autocomplete: 'off', maxLength: 8,
         oninput: (e) => { d.fl.no = e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); hint.textContent = airlineOf(d.fl.no); syncFlight(); } }), hint),
       h('div', { class: 'rowf' }, apSelect('from', '출발 공항'), apSelect('to', '도착 공항')),
@@ -733,7 +741,7 @@ function editSheet(src, preset) {
   }
   function paintBook() {
     const show = d.kind === 'air' || d.kind === 'hotel' || d.ref || d.link;
-    bookBox.replaceChildren(show ? h('div', { class: 'rowf' },
+    fill(bookBox, show ? h('div', { class: 'rowf' },
       field('예약번호 (선택)', h('input', { type: 'text', value: d.ref || '', placeholder: '예: ABC123', autocomplete: 'off', oninput: (e) => { d.ref = e.target.value; } })),
       field('예약 링크 (선택)', h('input', { type: 'text', inputMode: 'url', value: d.link || '', placeholder: '예약 확인 페이지 주소', autocomplete: 'off', oninput: (e) => { d.link = e.target.value; } }))) : null);
   }
@@ -741,7 +749,7 @@ function editSheet(src, preset) {
   const arrField = field('도착 시간', arrIn);
 
   function paintKinds() {
-    kindBox.replaceChildren(...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintFlight(); paintLoc(); paintOut(); paintBook(); } }, k.e + ' ' + k.n)));
+    fill(kindBox, ...KINDS.map((k) => h('button', { class: d.kind === k.k ? 'on' : '', onclick: () => { d.kind = k.k; paintKinds(); paintFlight(); paintLoc(); paintOut(); paintBook(); } }, k.e + ' ' + k.n)));
     const air = d.kind === 'air';
     searchBtn.hidden = d.kind === 'expense' || air;
     nameLabel.textContent = air ? '이름 (자동으로 채워져, 고쳐도 돼)' : d.kind === 'hotel' ? '숙소 이름' : '이름';
@@ -750,8 +758,8 @@ function editSheet(src, preset) {
     title.placeholder = d.kind === 'expense' ? '무엇에 쓴 비용인지 (예: 택시비, 환전)' : air ? '예: KE869 · 인천 → 대련' : d.kind === 'hotel' ? '호텔 이름 검색 (한국어·한자·영어)' : '장소 이름 (예: 성해광장, 러시아거리)';
   }
   function paintLoc() {
-    if (d.kind === 'expense') { locBox.replaceChildren(); resBox.replaceChildren(); return; }
-    locBox.replaceChildren(h('div', { class: 'loc' },
+    if (d.kind === 'expense') { fill(locBox); fill(resBox); return; }
+    fill(locBox, h('div', { class: 'loc' },
       hasLoc(d) ? [h('b', null, '📍 위치 지정됨'), d.local ? ' · ' + d.local : '', d.addr ? h('div', null, d.addr) : null] : '위치가 없으면 지도·거리 계산에서 빠져. 검색하거나 지도에서 찍어줘.',
       h('div', { class: 'acts' },
         h('button', { class: 'btn-ghost', onclick: () => pickOnMap(d, () => { d.addr = ''; paintLoc(); }) }, hasLoc(d) ? '지도에서 다시 지정' : '지도에서 지정'),
@@ -761,17 +769,17 @@ function editSheet(src, preset) {
   async function doSearch() {
     const q = (d.title || '').trim(); if (!q || d.kind === 'expense') return;
     title.blur();
-    resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 중…')));
+    fill(resBox, h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 중…')));
     try {
       const rows = await searchPlaces(q, t);
-      if (!rows.length) { resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '결과가 없어. 띄어쓰기를 바꾸거나 더 짧게(예: "성해"), 또는 한자·영어 이름으로 다시 검색해줘. "지도에서 지정"으로 직접 찍어도 돼.'))); return; }
-      resBox.replaceChildren(h('div', { class: 'results' }, rows.map((r) => {
+      if (!rows.length) { fill(resBox, h('div', { class: 'results' }, h('div', { class: 'msg' }, '결과가 없어. 띄어쓰기를 바꾸거나 더 짧게(예: "성해"), 또는 한자·영어 이름으로 다시 검색해줘. "지도에서 지정"으로 직접 찍어도 돼.'))); return; }
+      fill(resBox, h('div', { class: 'results' }, rows.map((r) => {
         const far = typeof t.lat === 'number' ? Geo.hav(t.lat, t.lng, r.lat, r.lng) : null;
-        return h('button', { onclick: () => { d.lat = r.lat; d.lng = r.lng; d.local = r.local || ''; d.addr = r.sub || ''; d.title = r.title; title.value = r.title; resBox.replaceChildren(); paintLoc(); } },
+        return h('button', { onclick: () => { d.lat = r.lat; d.lng = r.lng; d.local = r.local || ''; d.addr = r.sub || ''; d.title = r.title; title.value = r.title; fill(resBox); paintLoc(); } },
           h('b', null, r.title, r.local ? ' · ' + r.local : ''), h('span', null, [r.sub, far != null ? `${t.city || '중심'}에서 ${fmtDist(far)}` : ''].filter(Boolean).join(' · ')));
       })));
     } catch (e) {
-      resBox.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '지금은 장소 검색에 연결이 안 돼. 이름만 적고 "지도에서 지정"으로 위치를 찍을 수 있어.')));
+      fill(resBox, h('div', { class: 'results' }, h('div', { class: 'msg' }, '지금은 장소 검색에 연결이 안 돼. 이름만 적고 "지도에서 지정"으로 위치를 찍을 수 있어.')));
     }
   }
   const daySel = h('select', { onchange: (e) => { d.day = e.target.value; paintOut(); } },
@@ -779,16 +787,16 @@ function editSheet(src, preset) {
   daySel.value = days.includes(d.day) ? d.day : '';
   d.day = daySel.value;
   function paintOut() {
-    if (d.kind !== 'hotel' || !d.day) { outBox.replaceChildren(); return; }
+    if (d.kind !== 'hotel' || !d.day) { fill(outBox); return; }
     const opts = []; for (let x = addDays(d.day, 1); x <= addDays(t.end, 1) && opts.length < 30; x = addDays(x, 1)) opts.push(x);
     if (!opts.includes(d.out)) d.out = t.end > d.day ? t.end : opts[0];
     const sel = h('select', { onchange: (e) => { d.out = e.target.value; } }, opts.map((x) => h('option', { value: x }, mdw(x) + ' 체크아웃')));
     sel.value = d.out;
-    outBox.replaceChildren(field('체크아웃 (숙박 기간 동안 매일 숙소 기준으로 거리를 계산해)', sel));
+    fill(outBox, field('체크아웃 (숙박 기간 동안 매일 숙소 기준으로 거리를 계산해)', sel));
   }
   function paintSplit() {
     const cur = d.split && d.split.length ? d.split : members;
-    splitBox.replaceChildren(...members.map((m) => h('button', { class: cur.includes(m) ? 'on' : '', onclick: () => {
+    fill(splitBox, ...members.map((m) => h('button', { class: cur.includes(m) ? 'on' : '', onclick: () => {
       let n = cur.includes(m) ? cur.filter((x) => x !== m) : cur.concat(m);
       if (!n.length) n = [m];
       d.split = n.length === members.length ? null : n; paintSplit();
@@ -840,7 +848,7 @@ function editSheet(src, preset) {
 function legSheet(it, from, leg) {
   const set = Object.assign({}, it.leg || {});
   const box = h('div', { class: 'chips' });
-  const paint = () => box.replaceChildren(
+  const paint = () => fill(box, 
     h('button', { class: !set.mode ? 'on' : '', onclick: () => { delete set.mode; paint(); } }, '자동'),
     ...Object.entries(MODES).map(([k, m]) => h('button', { class: set.mode === k ? 'on' : '', onclick: () => { set.mode = k; paint(); } }, m.e + ' ' + m.n)));
   paint();
@@ -873,18 +881,18 @@ function pickOnMap(d, cb) {
 function tripSheet(isNew) {
   const base = isNew ? { title: '', emoji: '✈️', start: fd(new Date()), end: addDays(fd(new Date()), 2), city: '', cityZh: '', members: S.me ? [S.me] : [], rate: 200 } : JSON.parse(JSON.stringify(S.trip));
   const d = base, memBox = h('div', { class: 'chips' }), cityRes = h('div');
-  const paintMem = () => memBox.replaceChildren(...(d.members || []).map((m) => h('button', { class: 'on', onclick: () => { if (confirmRemove(m)) { d.members = d.members.filter((x) => x !== m); paintMem(); } } }, m + '  ×')));
+  const paintMem = () => fill(memBox, ...(d.members || []).map((m) => h('button', { class: 'on', onclick: () => { if (confirmRemove(m)) { d.members = d.members.filter((x) => x !== m); paintMem(); } } }, m + '  ×')));
   const confirmRemove = (m) => window.confirm(`${m} 님을 멤버에서 뺄까?`);
   const memIn = h('input', { type: 'text', placeholder: '이름 추가' });
   const addMem = () => { const v = memIn.value.trim(); if (v && !d.members.includes(v)) { d.members.push(v); paintMem(); } memIn.value = ''; };
   const city = h('input', { type: 'text', value: d.city || '', placeholder: '예: 대련, 옌타이, 칭다오', oninput: (e) => { d.city = e.target.value; } });
   const findCity = async () => {
     const q = (d.city || '').trim(); if (!q) return;
-    cityRes.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 중…')));
+    fill(cityRes, h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 중…')));
     try {
       const rows = await searchPlaces(q, {});
-      cityRes.replaceChildren(h('div', { class: 'results' }, rows.length ? rows.slice(0, 5).map((r) => h('button', { onclick: () => { d.lat = r.lat; d.lng = r.lng; d.cityZh = r.local || d.cityZh || ''; cityRes.replaceChildren(h('p', { class: 'hint', style: 'margin-top:6px' }, '✓ 지도 중심을 ' + r.title + '(으)로 맞췄어')); } }, h('b', null, r.title, r.local ? ' · ' + r.local : ''), h('span', null, r.sub))) : h('div', { class: 'msg' }, '결과가 없어')));
-    } catch (e) { cityRes.replaceChildren(h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 연결이 안 돼. 나중에 다시 해도 돼.'))); }
+      fill(cityRes, h('div', { class: 'results' }, rows.length ? rows.slice(0, 5).map((r) => h('button', { onclick: () => { d.lat = r.lat; d.lng = r.lng; d.cityZh = r.local || d.cityZh || ''; fill(cityRes, h('p', { class: 'hint', style: 'margin-top:6px' }, '✓ 지도 중심을 ' + r.title + '(으)로 맞췄어')); } }, h('b', null, r.title, r.local ? ' · ' + r.local : ''), h('span', null, r.sub))) : h('div', { class: 'msg' }, '결과가 없어')));
+    } catch (e) { fill(cityRes, h('div', { class: 'results' }, h('div', { class: 'msg' }, '검색 연결이 안 돼. 나중에 다시 해도 돼.'))); }
   };
   paintMem();
   openSheet(h('h2', null, isNew ? '새 여행' : '여행 설정'),
@@ -916,8 +924,10 @@ function nameSheet(after) {
   const done = (v) => {
     v = (v || '').trim(); if (!v) return toast('이름을 적어줘');
     const old = S.me; S.me = v; ls.set('me', v);
-    if (S.trip && old && old !== v && (S.trip.members || []).includes(old) && !S.trip.members.includes(v)) {
-      S.trip.members = S.trip.members.map((m) => (m === old ? v : m)); cachePut(); queue({ k: 'trip', id: S.tripId, data: S.trip });
+    if (S.trip && old && old !== v && (S.trip.members || []).includes(old)) {
+      // 옛 이름을 새 이름으로 바꾼다. 새 이름이 이미 멤버면(같은 사람이 두 번 들어온 경우) 옛 이름은 지워서 하나로 합친다
+      S.trip.members = S.trip.members.includes(v) ? S.trip.members.filter((m) => m !== old) : S.trip.members.map((m) => (m === old ? v : m));
+      cachePut(); queue({ k: 'trip', id: S.tripId, data: S.trip });
       // 이름을 바꾸면 결제·정산·작성자 기록도 같이 바꿔준다 (안 그러면 정산에 옛 이름이 유령처럼 남는다)
       S.items.slice().forEach((it) => {
         const usedIn = it.payer === old || it.by === old || (it.split || []).includes(old);
@@ -929,7 +939,7 @@ function nameSheet(after) {
         saveItem(n, true);
       });
     }
-    ensureMember(); closeSheet(); renderAll(); if (after) after();
+    ensureMember(true); closeSheet(); renderAll(); if (after) after();
   };
   openSheet(h('h2', null, '이름을 알려줘'),
     h('p', { class: 'subline', style: 'margin:-6px 0 14px' }, '누가 추가했는지, 누가 결제했는지 표시할 때 써. 로그인은 없어.'),
@@ -946,11 +956,11 @@ function markText(text, q) {
 }
 function renderSearch() {
   const q = $('searchInput').value.trim().toLowerCase(), box = $('searchResults'), days = tripDays(S.trip);
-  if (!q) { box.replaceChildren(h('div', { class: 'empty' }, '이 여행에 넣어둔 일정·메모·비용에서 찾아줘')); return; }
+  if (!q) { fill(box, h('div', { class: 'empty' }, '이 여행에 넣어둔 일정·메모·비용에서 찾아줘')); return; }
   const hits = S.items.filter((x) => [x.title, x.local, x.addr, x.memo, x.costNote, x.by, x.payer, x.ref, x.fl && x.fl.no, x.fl && airlineOf(x.fl.no), (KIND[x.kind] || {}).n].some((v) => v && String(v).toLowerCase().includes(q)))
     .sort((a, b) => String(a.day || '9').localeCompare(String(b.day || '9')) || (a.order || 0) - (b.order || 0));
-  if (!hits.length) { box.replaceChildren(h('div', { class: 'empty' }, '찾는 일정이 없어')); return; }
-  box.replaceChildren(...hits.map((x) => h('button', { class: 'sr', onclick: () => {
+  if (!hits.length) { fill(box, h('div', { class: 'empty' }, '찾는 일정이 없어')); return; }
+  fill(box, ...hits.map((x) => h('button', { class: 'sr', onclick: () => {
     $('search').hidden = true;
     if (x.kind === 'expense') { S.tab = 'cost'; renderAll(); editSheet(x); return; }
     S.tab = 'plan'; S.day = days.includes(x.day) ? x.day : 'none'; S.fit = true; renderAll(); focusItem(x.id);
